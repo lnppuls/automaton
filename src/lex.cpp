@@ -13,6 +13,7 @@ enum class TYPE {
     KEYWORDS,
     SYMBOL,
     VALUE,
+    NUM,
 };
 
 static std::unordered_set<std::string> symbols = {
@@ -23,6 +24,14 @@ static std::unordered_set<std::string> symbols = {
         "::",
         "//", "/*", "*/", "#", "&", "*"
 };
+
+static std::unordered_set<std::string> keywords = {
+    "auto", "break", "case", "char", "const", "continue", "default", "do", "double",
+    "else", "enum", "extern", "float", "for", "goto", "if", "int", "long", "register",
+    "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef",
+    "union", "unsigned", "void", "volatile", "while"
+};
+
 
 class word_unit{
 public:
@@ -38,8 +47,9 @@ public:
     enum class State {
         NORMAL,
         WORD,
-        ANNOTATION,
         INANNOTATION,
+        SYMBOL,
+        NUMBER,
         INVARIABLE,
     };
     lex_analysis() { buff_size_ = 0; }
@@ -86,10 +96,6 @@ auto lex_analysis::run() -> std::vector<word_unit>
     while (file_string_.get(mchar)) {
     switch (status) {
         case State::NORMAL: {
-            if (mchar == '/') {
-                status = State::ANNOTATION;
-                break;
-            }
             if (mchar != '\n' && mchar != ' ' && mchar != (char)9){
                 status = State::WORD;
                 file_string_.putback(mchar);
@@ -102,27 +108,29 @@ auto lex_analysis::run() -> std::vector<word_unit>
                 status = State::NORMAL;
                 break;
             }
-            if(mchar == '/'){
-                file_string_.putback(mchar);
-                status = State::NORMAL;
+            char new_char;
+            file_string_.get(new_char);
+            if(mchar == '/' && new_char == '/'){
+                status = State::INANNOTATION;
                 break;
+            } else {
+                file_string_.putback(new_char);
             }
-            if(((int)mchar >= 65 && (int)mchar <= 90) || ((int)mchar >= 97 && (int)mchar <= 122)){
+            if(isalpha(mchar)){   
+                file_string_.putback(mchar);
                 status = State::INVARIABLE;
+                break;
+            } else if(isdigit(mchar)){
                 file_string_.putback(mchar);
+                status = State::NUMBER;
                 break;
             }
-
+            else{
+                file_string_.putback(mchar);
+                status = State::SYMBOL;
+                break;
+            }
             break;
-        }
-        case State::ANNOTATION: {
-            if(mchar != '/'){
-                if(mchar)
-                file_string_.putback(mchar);
-                status = State::NORMAL;
-                break;
-            }
-            status = State::INANNOTATION;
         }
         case State::INANNOTATION:{
             if(mchar == '\n'){
@@ -131,16 +139,39 @@ auto lex_analysis::run() -> std::vector<word_unit>
             break;
         }
         case State::INVARIABLE: {
-            if(((int)mchar >= 65 && (int)mchar <= 90) || ((int)mchar >= 97 && mchar <= 122) || (mchar == '_') || ((int)mchar >= 48 &&(int)mchar <= 57)){
+            if(isalnum(mchar) || mchar == '_' || mchar == '.'){
                 now_string.push_back(mchar);
                 break;
             }
             file_string_.putback(mchar);
             status = State::NORMAL;
-            out.emplace_back(now_string,TYPE::VARIABLE,-1);
-            std::cout << now_string << std::endl;
+            if(keywords.find(now_string) == keywords.end()){
+                out.emplace_back(now_string,TYPE::VARIABLE,-1);
+                // std::cout << now_string << std::endl;
+            } else {
+                out.emplace_back(now_string,TYPE::KEYWORDS,-1);
+            }
             now_string.clear();
+            status = State::NORMAL;
             break;
+        }
+        case State::SYMBOL: {
+            std::string msymbol;
+            msymbol.push_back(mchar);
+            out.emplace_back(msymbol,TYPE::SYMBOL,-1);
+            status = State::NORMAL;
+            break;
+        }
+        case State::NUMBER: {
+            if(!isdigit(mchar)){
+                file_string_.putback(mchar);
+                out.emplace_back(now_string,TYPE::NUM,-1);
+                // std::cout << now_string << std::endl;
+                now_string.clear();
+                status = State::NORMAL;
+                break;
+            }
+            now_string.push_back(mchar);
         }
         default:
             break;
@@ -154,5 +185,12 @@ int main(){
     infilestream.open("./test_cases/main.c");
     lex_analysis ana{infilestream,100};
     ana.init();
-    ana.run();
+    auto res = ana.run();
+    int num = 0;
+    for(auto &uit : res){
+        std::cout << uit.name_ << ' ';
+        if(++num % 10 == 0){
+            std::cout << std::endl;
+        } 
+    }
 }
